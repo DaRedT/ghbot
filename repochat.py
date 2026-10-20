@@ -35,7 +35,7 @@ def call_llm(prompt, system=None):
         provider = "gemini" if GEMINI_KEY else "ollama"
 
     if provider == "gemini":
-        model = CHAT_MODEL if CHAT_MODEL != "auto" else "gemini-2.0-flash"
+        model = CHAT_MODEL if CHAT_MODEL != "auto" else "gemini-3.6-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_KEY}"
         contents = []
         if system:
@@ -45,7 +45,7 @@ def call_llm(prompt, system=None):
         data = json.dumps(payload).encode()
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 result = json.loads(resp.read())
                 return result["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:

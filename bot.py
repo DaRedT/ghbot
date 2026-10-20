@@ -13,7 +13,7 @@ Environment variables:
   GEMINI_API_KEY      - Google Gemini API key (optional)
   OLLAMA_URL          - Ollama endpoint (optional, default http://127.0.0.1:11434)
   LLM_PROVIDER        - "gemini" or "ollama" (default: gemini if key present)
-  LLM_MODEL           - model name (default: gemini-2.0-flash or qwen3:8b)
+  LLM_MODEL           - model name (default: gemini-3.6-flash or qwen3:8b)
 """
 import json
 import os
@@ -32,7 +32,7 @@ def get_event():
         return json.load(f)
 
 
-def call_gemini(prompt, model="gemini-2.0-flash", api_key=None):
+def call_gemini(prompt, model="gemini-3.6-flash", api_key=None):
     api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return None
@@ -41,7 +41,7 @@ def call_gemini(prompt, model="gemini-2.0-flash", api_key=None):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             result = json.loads(resp.read())
             return result["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
@@ -71,7 +71,7 @@ def call_llm(prompt):
         else:
             provider = "ollama"
     if provider == "gemini":
-        model = os.environ.get("LLM_MODEL", "gemini-2.0-flash")
+        model = os.environ.get("LLM_MODEL", "gemini-3.6-flash")
         return call_gemini(prompt, model=model)
     else:
         model = os.environ.get("LLM_MODEL", "qwen3:8b")
