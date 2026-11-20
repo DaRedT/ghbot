@@ -10,17 +10,70 @@ Environment variables:
   GITHUB_TOKEN        - GitHub API token (auto-provided in Actions)
   GITHUB_REPOSITORY   - owner/repo (auto-provided in Actions)
   GITHUB_EVENT_PATH   - path to event JSON (auto-provided in Actions)
-  GEMINI_API_KEY      - Google Gemini API key (optional)
+  NOUS_REFRESH_TOKEN  - Nous OAuth refresh token (GitHub Secret, rotating-safe)
   OLLAMA_URL          - Ollama endpoint (optional, default http://127.0.0.1:11434)
-  LLM_PROVIDER        - "gemini" or "ollama" (default: gemini if key present)
-  LLM_MODEL           - model name (default: gemini-3.6-flash or qwen3:8b)
+  LLM_PROVIDER        - "nous", "gemini" or "ollama" (default: nous if RT present)
+  LLM_MODEL           - model name (default: tencent/hy4-flash:free)
 """
 import json
 import os
 import sys
-import subprocess
 import urllib.request
 import urllib.error
+import urllib.parse
+
+NOUS_PORTAL = "https://portal.nousresearch.com"
+NOUS_CLIENT = "hermes-cli"
+NOUS_INFERENCE = "https://inference-api.nousresearch.com/v1"
+
+
+def _post_form(url, fields, headers=None):
+    data = urllib.parse.urlencode(fields).encode()
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
+
+
+def nous_access_token(refresh_token):
+    """Refresh the short-lived invoke-JWT from the (reusable) refresh token."""
+    tok = _post_form(
+        f"{NOUS_PORTAL}/api/oauth/token",
+        {"grant_type": "refresh_token", "client_id": NOUS_CLIENT},
+        {"x-nous-refresh-token": refresh_token,
+         "Content-Type": "application/x-www-form-urlencoded"},
+    )
+    return tok.get("access_token")
+
+
+def call_nous(prompt, model="tencent/hy4-flash:free", refresh_token=None):
+    refresh_token = refresh_token or os.environ.get("NOUS_REFRESH_TOKEN")
+    if not refresh_token:
+        return None
+    try:
+        access = nous_access_token(refresh_token)
+        if not access:
+            print("[!] Nous refresh returned no access_token")
+            return None
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful GitHub bot. Reply concisely."},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": 600,
+        }
+        req = urllib.request.Request(
+            f"{NOUS_INFERENCE}/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read())
+        return result["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"[!] Nous error: {e}")
+        return None
 
 
 def get_event():
@@ -66,10 +119,14 @@ def call_ollama(prompt, model="qwen3:8b", base="http://127.0.0.1:11434"):
 def call_llm(prompt):
     provider = os.environ.get("LLM_PROVIDER", "auto")
     if provider == "auto":
-        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        if os.environ.get("NOUS_REFRESH_TOKEN"):
+            provider = "nous"
+        elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
             provider = "gemini"
         else:
             provider = "ollama"
+    if provider == "nous":
+        return call_nous(prompt, model=os.environ.get("LLM_MODEL", "tencent/hy4-flash:free"))
     if provider == "gemini":
         model = os.environ.get("LLM_MODEL", "gemini-3.6-flash")
         return call_gemini(prompt, model=model)
