@@ -117,23 +117,36 @@ def call_ollama(prompt, model="qwen3:8b", base="http://127.0.0.1:11434"):
 
 
 def call_llm(prompt):
-    provider = os.environ.get("LLM_PROVIDER", "auto")
-    if provider == "auto":
-        if os.environ.get("NOUS_REFRESH_TOKEN"):
-            provider = "nous"
-        elif os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-            provider = "gemini"
-        else:
-            provider = "ollama"
-    if provider == "nous":
+    """Try providers in order: nous -> ollama -> gemini (fallback chain).
+
+    LLM_PROVIDER can force a single provider ("nous"/"ollama"/"gemini");
+    otherwise every configured provider is tried until one answers.
+    NOTE: Ollama is only reachable when OLLAMA_URL points at a running
+    server (e.g. local device). On GitHub-hosted runners localhost:11434
+    has no Ollama, so that step fails fast and is skipped.
+    """
+    forced = os.environ.get("LLM_PROVIDER", "auto")
+    if forced == "nous":
         return call_nous(prompt, model=os.environ.get("LLM_MODEL", "tencent/hy4-flash:free"))
-    if provider == "gemini":
-        model = os.environ.get("LLM_MODEL", "gemini-3.6-flash")
-        return call_gemini(prompt, model=model)
-    else:
-        model = os.environ.get("LLM_MODEL", "qwen3:8b")
-        base = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-        return call_ollama(prompt, model=model, base=base)
+    if forced == "gemini":
+        return call_gemini(prompt, model=os.environ.get("LLM_MODEL", "gemini-3.6-flash"))
+    if forced == "ollama":
+        return call_ollama(prompt, model=os.environ.get("LLM_MODEL", "qwen3:8b"),
+                           base=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434"))
+
+    if os.environ.get("NOUS_REFRESH_TOKEN"):
+        result = call_nous(prompt, model=os.environ.get("LLM_MODEL", "tencent/hy4-flash:free"))
+        if result:
+            return result
+        print("[*] Nous failed -> trying Ollama backup")
+    result = call_ollama(prompt, model=os.environ.get("LLM_MODEL", "qwen3:8b"),
+                         base=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434"))
+    if result:
+        return result
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        print("[*] Ollama failed -> trying Gemini backup")
+        return call_gemini(prompt, model=os.environ.get("LLM_MODEL", "gemini-3.6-flash"))
+    return None
 
 
 def github_api(method, endpoint, data=None, token=None):
