@@ -197,6 +197,11 @@ def build_prompt(event, event_type):
             f"PR body: {body[:2000]}\n"
             f"Opened by: {user}\n"
         )
+    elif event_type == "workflow_dispatch":
+        return (
+            "You are AndroBot. Reply with exactly one short line: "
+            "'AndroBot online, Nous + Ollama backup ready.' No extra text."
+        )
     return None
 
 
@@ -214,6 +219,9 @@ def main():
     elif "pull_request" in event:
         event_type = "pull_request"
         number = event["pull_request"]["number"]
+    elif os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        event_type = "workflow_dispatch"
+        number = None  # health check: no comment is posted
     else:
         print("[!] Unknown event type")
         sys.exit(1)
@@ -229,6 +237,9 @@ def main():
         sys.exit(1)
 
     comment = f"**AndroBot** (AI-assisted)\n\n{response}\n\n---\n*Powered by AndroBot*"
+    if number is None:
+        print(f"[+] Health check OK: {response}")
+        return
     result = post_comment(repo, number, comment)
     if result:
         print(f"[+] Comment posted: {result.get('html_url', '')}")
