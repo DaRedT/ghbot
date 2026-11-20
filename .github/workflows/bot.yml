@@ -22,6 +22,7 @@ jobs:
       - name: Run AndroBot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOUS_AGENT_KEY: ${{ secrets.NOUS_AGENT_KEY }}
           NOUS_REFRESH_TOKEN: ${{ secrets.NOUS_REFRESH_TOKEN }}
           LLM_PROVIDER: auto
           LLM_MODEL: tencent/hy4-flash:free

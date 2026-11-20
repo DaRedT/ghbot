@@ -46,14 +46,28 @@ def nous_access_token(refresh_token):
 
 
 def call_nous(prompt, model="tencent/hy4-flash:free", refresh_token=None):
-    refresh_token = refresh_token or os.environ.get("NOUS_REFRESH_TOKEN")
-    if not refresh_token:
-        return None
-    try:
-        access = nous_access_token(refresh_token)
+    """Call Nous inference. Prefers the long-lived agent_key (1 h) over
+    refreshing the RT on every run: Nous rejects an RT after its first use,
+    so a per-run refresh would kill the shared session after one Actions run.
+    Set NOUS_AGENT_KEY (GitHub Secret) for stable operation; NOUS_REFRESH_TOKEN
+    remains a fallback for bootstrapping a fresh agent_key.
+    """
+    access = os.environ.get("NOUS_AGENT_KEY")
+    if access:
+        print("[*] Nous: using agent_key (no refresh)")
+    else:
+        refresh_token = refresh_token or os.environ.get("NOUS_REFRESH_TOKEN")
+        if not refresh_token:
+            return None
+        try:
+            access = nous_access_token(refresh_token)
+        except Exception as e:
+            print(f"[!] Nous refresh error: {e}")
+            return None
         if not access:
             print("[!] Nous refresh returned no access_token")
             return None
+    try:
         payload = {
             "model": model,
             "messages": [
@@ -70,7 +84,8 @@ def call_nous(prompt, model="tencent/hy4-flash:free", refresh_token=None):
         )
         with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read())
-        return result["choices"][0]["message"]["content"]
+        msg = result["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning") or ""
     except Exception as e:
         print(f"[!] Nous error: {e}")
         return None
